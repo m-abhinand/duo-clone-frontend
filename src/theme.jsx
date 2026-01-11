@@ -1,8 +1,13 @@
-import { createContext, useEffect } from 'react'
+import { createContext, useEffect, useState } from 'react'
 
 export const ThemeContext = createContext(null)
 
 export function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState(() => {
+    // Get saved theme from localStorage or default to 'light'
+    return localStorage.getItem('theme') || 'light'
+  })
+
   useEffect(() => {
     // inject preconnects + stylesheet for DM Sans if not already present
     if (!document.querySelector('link[data-theme="dm-sans-preconnect"]')) {
@@ -29,16 +34,24 @@ export function ThemeProvider({ children }) {
       document.head.appendChild(css)
     }
 
-    // set CSS var and apply font to body (keeps precedence over existing rules)
+    // set CSS var and apply font to body
     const fontFamily = `"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`
     document.documentElement.style.setProperty('--app-font', fontFamily)
     document.body.style.fontFamily = fontFamily
-
-    // cleanup is not required for persistent theme
   }, [])
 
+  useEffect(() => {
+    // Apply theme to document
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'))
+  }
+
   return (
-    <ThemeContext.Provider value={null}>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )

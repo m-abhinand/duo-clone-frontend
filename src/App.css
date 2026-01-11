@@ -89,6 +89,27 @@
   text-decoration: none;
 }
 
+/* Success & Error Messages */
+.error-message {
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.success-message {
+  background-color: #dcfce7;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
 /* small responsive tweak (page-specific stacking handled in SignIn.css too) */
 @media (max-width: 880px) {
   .auth-container {

@@ -1,27 +1,50 @@
 import './Profile.css'
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect, useContext } from 'react'
+import { apiService } from '../services/api'
+import { getUser, removeUser } from '../context/UserContext'
+import { FaUser, FaChartBar, FaCog, FaSignOutAlt, FaChevronLeft, FaMoon, FaSun } from 'react-icons/fa'
+import { ThemeContext } from '../theme'
 
 function Profile() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(true)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const { theme, toggleTheme } = useContext(ThemeContext)
 
-  // Mock user data
-  const user = {
-    name: 'Demo User',
-    email: 'demo@techlingo.com',
-    joinDate: 'January 2024',
+  // Format join date from user's createdAt
+  const formatJoinDate = (createdAt) => {
+    if (!createdAt) return 'January 2024'
+    
+    try {
+      const date = new Date(createdAt)
+      const options = { month: 'long', year: 'numeric' }
+      return date.toLocaleDateString('en-US', options)
+    } catch (error) {
+      console.error('Error formatting date:', error)
+      return 'January 2024'
+    }
+  }
+
+  // Default user data (fallback)
+  const [user, setUser] = useState({
+    name: currentUser?.name || 'Demo User',
+    email: currentUser?.email || 'demo@techlingo.com',
+    joinDate: formatJoinDate(currentUser?.createdAt),
     avatar: '👤',
     stats: {
-      coursesCompleted: 3,
-      coursesInProgress: 2,
-      totalXP: 2450,
-      currentStreak: 5,
-      longestStreak: 12,
-      lessonsCompleted: 47,
-      exercisesDone: 156,
-      badges: 8
+      coursesCompleted: 0,
+      coursesInProgress: 0,
+      totalXP: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      lessonsCompleted: 0,
+      exercisesDone: 0,
+      badges: 0
     },
+    enrolledCourses: [], // Add enrolled courses data
     achievements: [
       { id: 1, icon: '🔥', name: 'Week Warrior', description: '7-day streak' },
       { id: 2, icon: '⚡', name: 'Quick Learner', description: 'Complete 10 lessons' },
@@ -38,15 +61,160 @@ function Profile() {
       { id: 3, action: 'Started course', course: 'Python Basics', time: '3 days ago' },
       { id: 4, action: 'Completed quiz', course: 'Java Programming', time: '4 days ago' }
     ]
+  })
+
+  // Redirect to signin if not authenticated
+  useEffect(() => {
+    const user = getUser()
+    if (!user) {
+      navigate('/signin', { replace: true })
+      return
+    }
+    setCurrentUser(user)
+  }, [navigate])
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!currentUser) return
+      
+      try {
+        setLoading(true)
+        const enrolledCourses = await apiService.getEnrolledCourses()
+        
+        // Fetch detailed progress for each course
+        const coursesWithDetails = await Promise.all(
+          enrolledCourses.map(async (course) => {
+            try {
+              const details = await apiService.getCourseDetails(course.id)
+              const progressData = await apiService.getCourseProgress(course.id)
+              
+              return {
+                ...course,
+                ...details,
+                technicalProgress: progressData?.technicalProgress || [],
+                mcqProgress: progressData?.mcqProgress || [],
+                technicalCompleted: progressData?.technicalProgress?.filter(Boolean).length || 0,
+                mcqCompleted: progressData?.mcqProgress?.filter(Boolean).length || 0,
+                totalTechnical: details.technicalContent?.length || 0,
+                totalMcq: details.mcqQuestions?.length || 0
+              }
+            } catch (error) {
+              console.error(`Error fetching details for course ${course.id}:`, error)
+              return course
+            }
+          })
+        )
+        
+        setUser(prev => ({
+          ...prev,
+          name: currentUser.name || prev.name,
+          email: currentUser.email || prev.email,
+          joinDate: formatJoinDate(currentUser.createdAt),
+          enrolledCourses: coursesWithDetails
+        }))
+        
+        // Update user stats
+        if (Array.isArray(coursesWithDetails) && coursesWithDetails.length > 0) {
+          const completedCount = coursesWithDetails.filter(c => c.progress >= 100).length
+          const inProgressCount = coursesWithDetails.filter(c => c.progress > 0 && c.progress < 100).length
+          
+          // Calculate total lessons completed
+          const totalLessonsCompleted = coursesWithDetails.reduce((sum, c) => {
+            return sum + (c.technicalCompleted || 0) + (c.mcqCompleted || 0)
+          }, 0)
+          
+          setUser(prev => ({
+            ...prev,
+            stats: {
+              ...prev.stats,
+              coursesCompleted: completedCount,
+              coursesInProgress: inProgressCount,
+              lessonsCompleted: totalLessonsCompleted
+            }
+          }))
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (currentUser) {
+      fetchUserData()
+    }
+  }, [currentUser])
+
+  const handleLogout = () => {
+    removeUser()
+    navigate('/signin')
+  }
+
+  const toggleProfileMenu = () => {
+    setShowProfileMenu(!showProfileMenu)
+  }
+
+  if (!currentUser) {
+    return <div className="profile-page"><p>Loading...</p></div>
+  }
+
+  if (loading) {
+    return <div className="profile-page"><p>Loading profile...</p></div>
   }
 
   return (
     <div className="profile-page">
       <nav className="navbar">
-        <h2 onClick={() => navigate('/home')} style={{ cursor: 'pointer' }}>TechLingo</h2>
-        <button className="btn-back-nav" onClick={() => navigate('/home')}>
-          ← Back to Home
-        </button>
+        <div className="navbar-left">
+          <button className="btn-back-arrow" onClick={() => navigate('/home')} aria-label="Back to Home">
+            <FaChevronLeft />
+          </button>
+          <h2 onClick={() => navigate('/home')} style={{ cursor: 'pointer' }}>TechLingo</h2>
+        </div>
+        
+        <div className="navbar-right">
+          <button className="btn-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === 'light' ? <FaMoon /> : <FaSun />}
+          </button>
+          
+          <div className="navbar-profile">
+            <span className="navbar-username">{user.name}</span>
+            <button className="profile-btn" onClick={toggleProfileMenu}>
+              <FaUser className="profile-icon" />
+            </button>
+            
+            {showProfileMenu && (
+              <>
+                <div className="profile-overlay" onClick={() => setShowProfileMenu(false)} />
+                <div className="profile-menu">
+                  <div className="profile-menu-header">
+                    <div className="profile-avatar">
+                      <FaUser size={24} />
+                    </div>
+                    <div className="profile-info">
+                      <p className="profile-name">{user.name}</p>
+                      <p className="profile-email">{user.email}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="profile-menu-divider" />
+                  
+                  <button className="profile-menu-item" onClick={() => { setShowProfileMenu(false); navigate('/home'); }}>
+                    <FaChartBar className="menu-icon" />
+                    Back to Home
+                  </button>
+                  
+                  <div className="profile-menu-divider" />
+                  
+                  <button className="profile-menu-item logout" onClick={handleLogout}>
+                    <FaSignOutAlt className="menu-icon" />
+                    Logout
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </nav>
 
       <div className="profile-content">
@@ -61,40 +229,6 @@ function Profile() {
             </div>
             <div className="profile-header-actions">
               <button className="btn-edit-profile">Edit Profile</button>
-            </div>
-          </div>
-        </section>
-
-        {/* Stats Overview */}
-        <section className="profile-stats-section">
-          <div className="stats-grid">
-            <div className="stat-card stat-primary">
-              <span className="stat-icon">🔥</span>
-              <div className="stat-details">
-                <span className="stat-number">{user.stats.currentStreak}</span>
-                <span className="stat-title">Day Streak</span>
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-icon">⚡</span>
-              <div className="stat-details">
-                <span className="stat-number">{user.stats.totalXP}</span>
-                <span className="stat-title">Total XP</span>
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-icon">📚</span>
-              <div className="stat-details">
-                <span className="stat-number">{user.stats.lessonsCompleted}</span>
-                <span className="stat-title">Lessons Done</span>
-              </div>
-            </div>
-            <div className="stat-card">
-              <span className="stat-icon">🏆</span>
-              <div className="stat-details">
-                <span className="stat-number">{user.stats.badges}</span>
-                <span className="stat-title">Badges Earned</span>
-              </div>
             </div>
           </div>
         </section>
@@ -119,18 +253,61 @@ function Profile() {
           >
             Activity
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Settings
-          </button>
         </div>
 
         {/* Tab Content */}
         <div className="tab-content">
           {activeTab === 'overview' && (
             <div className="overview-content">
+              {/* Course Progress Section */}
+              {user.enrolledCourses && user.enrolledCourses.length > 0 && (
+                <section className="course-progress-overview">
+                  <h3>Your Courses</h3>
+                  <div className="course-progress-list">
+                    {user.enrolledCourses.map((course) => (
+                      <div key={course.id} className="course-progress-card">
+                        <div className="course-progress-header">
+                          <div className="course-info-compact">
+                            <h4>{course.name}</h4>
+                            <span className="course-level-badge">{course.level}</span>
+                          </div>
+                          <span className="progress-percent-large">{course.progress || 0}%</span>
+                        </div>
+                        
+                        <div className="progress-bar-profile">
+                          <div 
+                            className="progress-fill-profile" 
+                            style={{ width: `${course.progress || 0}%` }}
+                          />
+                        </div>
+                        
+                        <div className="course-progress-stats">
+                          <div className="progress-stat">
+                            <span className="stat-icon">📚</span>
+                            <span className="stat-text">
+                              {course.technicalCompleted || 0}/{course.totalTechnical || 0} Technical
+                            </span>
+                          </div>
+                          <div className="progress-stat">
+                            <span className="stat-icon">❓</span>
+                            <span className="stat-text">
+                              {course.mcqCompleted || 0}/{course.totalMcq || 0} Quiz
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <button 
+                          className="btn-continue-profile"
+                          onClick={() => navigate(`/course-continue/${course.id}`)}
+                        >
+                          Continue Learning →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               <div className="overview-grid">
                 <div className="overview-card">
                   <h3>Learning Progress</h3>
@@ -143,8 +320,8 @@ function Profile() {
                     <span className="progress-value">{user.stats.coursesInProgress}</span>
                   </div>
                   <div className="progress-item">
-                    <span className="progress-label">Exercises Done</span>
-                    <span className="progress-value">{user.stats.exercisesDone}</span>
+                    <span className="progress-label">Modules Completed</span>
+                    <span className="progress-value">{user.stats.lessonsCompleted}</span>
                   </div>
                   <div className="progress-item">
                     <span className="progress-label">Longest Streak</span>
@@ -198,62 +375,6 @@ function Profile() {
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="settings-content">
-              <h3>Account Settings</h3>
-              <div className="settings-section">
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <h4>Email Notifications</h4>
-                    <p>Receive updates about your progress</p>
-                  </div>
-                  <label className="toggle-switch">
-                    <input type="checkbox" defaultChecked />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <h4>Daily Reminders</h4>
-                    <p>Get reminded to practice every day</p>
-                  </div>
-                  <label className="toggle-switch">
-                    <input type="checkbox" defaultChecked />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <h4>Sound Effects</h4>
-                    <p>Play sounds for achievements</p>
-                  </div>
-                  <label className="toggle-switch">
-                    <input type="checkbox" />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-
-              <h3 style={{ marginTop: '24px' }}>Danger Zone</h3>
-              <div className="settings-section danger">
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <h4>Reset Progress</h4>
-                    <p>Clear all your learning progress</p>
-                  </div>
-                  <button className="btn-danger">Reset</button>
-                </div>
-                <div className="setting-item">
-                  <div className="setting-info">
-                    <h4>Delete Account</h4>
-                    <p>Permanently delete your account</p>
-                  </div>
-                  <button className="btn-danger">Delete</button>
-                </div>
               </div>
             </div>
           )}

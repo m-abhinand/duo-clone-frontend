@@ -1,17 +1,71 @@
 import './SignIn.css'
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { apiService } from '../services/api'
+import { saveUser } from '../context/UserContext'
 
 function SignIn() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    // Show success message from signup redirect
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message)
+      setTimeout(() => setSuccessMessage(''), 5000)
+    }
+  }, [location])
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // Add authentication logic here
-    console.log('Sign in:', { email, password })
-    navigate('/home')
+    setError('')
+    setLoading(true)
+
+    try {
+      // Validate inputs
+      if (!email.trim() || !password.trim()) {
+        setError('Email and password are required')
+        setLoading(false)
+        return
+      }
+
+      // Call backend login
+      const response = await apiService.login({
+        email: email.trim(),
+        password,
+      })
+
+      if (response.error) {
+        setError(response.error)
+      } else {
+        // Save user data to localStorage
+        saveUser({
+          name: response.name,
+          email: response.email,
+          role: response.role,
+          userId: response.userId,
+          createdAt: response.createdAt
+        })
+        
+        // Login successful, redirect based on role (handle both formats)
+        const userRole = response.role.replace('ROLE_', '')
+        if (userRole === 'ADMIN') {
+          navigate('/admin')
+        } else {
+          navigate('/home')
+        }
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+      setError(err.response?.data?.error || err.message || 'Failed to sign in')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -44,6 +98,9 @@ function SignIn() {
           <h1>Welcome Back!</h1>
           <p>Sign in to continue your learning journey</p>
           
+          {successMessage && <div className="success-message">{successMessage}</div>}
+          {error && <div className="error-message">{error}</div>}
+          
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label htmlFor="email">Email</label>
@@ -54,6 +111,7 @@ function SignIn() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 required
+                disabled={loading}
               />
             </div>
             
@@ -66,11 +124,12 @@ function SignIn() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
+                disabled={loading}
               />
             </div>
             
-            <button type="submit" className="btn-primary">
-              Sign In
+            <button type="submit" className="btn-primary" disabled={loading}>
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
           
